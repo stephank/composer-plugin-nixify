@@ -169,7 +169,7 @@ class NixGenerator
         file_put_contents('composer-project.nix', ob_get_clean());
 
         // Generate default.nix if it does not exist yet.
-        if (!file_exists('default.nix')) {
+        if (!file_exists('default.nix') && !file_exists('flake.nix')) {
             ob_start();
             require __DIR__ . '/../res/default.nix.php';
             file_put_contents('default.nix', ob_get_clean());
