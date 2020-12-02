@@ -160,7 +160,7 @@ class NixGenerator
 
         // Use the root package name as default derivation name.
         $projectName = self::nixString(self::safeNixStoreName(
-            $this->composer->getPackage()->getUniqueName())
+            $this->composer->getPackage()->getName())
         );
 
         // Generate composer-project.nix.
