@@ -3,7 +3,6 @@
 namespace Nixify;
 
 use Composer\Composer;
-use Composer\Downloader\FileDownloader;
 use Composer\IO\IOInterface;
 use Composer\Package\Loader\ArrayLoader;
 use Composer\Util\Filesystem;
@@ -98,7 +97,10 @@ class NixGenerator
                 $numToFetch
             ));
 
-            $downloader = new FileDownloader($this->io, $this->config);
+            $downloader = $this->composer->getDownloadManager()->getDownloader('file');
+            $reflectDownload = new \ReflectionMethod(get_class($downloader), 'download');
+            $isComposer2 = $reflectDownload->getNumberOfParameters() === 4;
+
             $tempDir = $this->cacheDir . '.nixify-tmp-' . substr(md5(uniqid('', true)), 0, 8);
             $this->fs->ensureDirectoryExists($tempDir);
             try {
@@ -114,8 +116,20 @@ class NixGenerator
                         $package->getName(),
                         $package->getFullPrettyVersion()
                     ), false);
-                    $tempFile = $downloader->download($package, $tempDir, false);
-                    $this->io->writeError('');
+
+                    $tempFile = '';
+                    if ($isComposer2) {
+                        $promise = $downloader->download($package, $tempDir, null, false)
+                            ->then(function ($filename) use (&$tempFile) {
+                                $tempFile = $filename;
+                            });
+                        $this->composer->getLoop()->wait([$promise]);
+                        $this->io->writeError('OK');
+                    } else {
+                        $tempFile = $downloader->download($package, $tempDir, false);
+                        $this->io->writeError('');
+                    }
+
 
                     $cachePath = $this->cacheDir . $info['cacheFile'];
                     $this->fs->ensureDirectoryExists(dirname($cachePath));

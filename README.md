@@ -37,7 +37,7 @@ Related projects:
 ## Usage
 
 The Nixify plugin should work fine with Composer versions all the way back to
-1.1.0, and also supports Composer 2.0.
+1.3.0, and also supports Composer 2.0.
 
 To use the plugin:
 
