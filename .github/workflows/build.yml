@@ -1,0 +1,70 @@
+name: build
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.3', '7.4', '8.0']
+        composer: ['v1', 'v2']
+    steps:
+
+    - name: Checkout
+      uses: actions/checkout@v2
+      with:
+        path: composer-plugin-nixify
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: "${{ matrix.php }}"
+        tools: "composer:${{ matrix.composer }}"
+
+    - name: Create test project
+      run: |
+        cat > composer.json << 'EOF'
+        {
+          "minimum-stability": "dev",
+          "repositories": [
+            {
+              "type": "path",
+              "url": "./composer-plugin-nixify"
+            }
+          ],
+          "require": {
+            "psr/log": "1.1.3",
+            "stephank/composer-plugin-nixify": "*"
+          }
+        }
+        EOF
+
+    - name: Test without Nix
+      run: composer upgrade
+
+    - name: Install Nix
+      uses: nixbuild/nix-quick-install-action@v4
+
+    - name: Setup Cachix
+      if: github.event_name == 'push' && github.repository_owner == 'stephank'
+      uses: cachix/cachix-action@v8
+      with:
+        name: stephank
+        signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
+
+    - name: Test with Nix
+      run: composer upgrade
+
+    - name: Test refetch
+      run: |
+        composer clearcache
+        composer upgrade
+
+    - name: Test nix-build
+      run: |
+        rm -fr vendor
+        nix-build
+      env:
+        NIX_PATH: nixpkgs=channel:nixpkgs-unstable
