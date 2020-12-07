@@ -94,8 +94,8 @@ in project.overrideAttrs (oldAttrs: {
 
 ## Settings
 
-Some additional settings are available which can be set in the `"extras"`
-object in your `composer.json`:
+Some additional settings are available which can be set in the `"extra"` object
+in your `composer.json`:
 
 - `nix-expr-path` can be set to customize the path where the Nixify plugin
   writes `composer-project.nix`. For example, if you're also using [Niv] in
