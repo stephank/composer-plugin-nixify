@@ -14,7 +14,7 @@ class Plugin implements PluginInterface, Capable, EventSubscriberInterface
     public function postInstall(Event $event)
     {
         $generator = new NixGenerator($event->getComposer(), $event->getIO());
-        if ($generator->canPreload) {
+        if ($generator->shouldPreload) {
             $generator->collect();
             $generator->preload();
         }
@@ -25,7 +25,7 @@ class Plugin implements PluginInterface, Capable, EventSubscriberInterface
         $generator = new NixGenerator($event->getComposer(), $event->getIO());
         $generator->collect();
         $generator->generate();
-        if ($generator->canPreload) {
+        if ($generator->shouldPreload) {
             $generator->preload();
         }
     }

@@ -91,3 +91,24 @@ in project.overrideAttrs (oldAttrs: {
 
 })
 ```
+
+## Settings
+
+Some additional settings are available which can be set in the `"extras"`
+object in your `composer.json`:
+
+- `nix-expr-path` can be set to customize the path where the Nixify plugin
+  writes `composer-project.nix`. For example, if you're also using [Niv] in
+  your project, you may prefer to set this to `nix/composer-project.nix`.
+
+- `generate-default-nix` can be set to `false` to disable generating a
+  `default.nix`. This file is only generated if it doesn't exist yet, but this
+  flag can be useful if you don't want a `default.nix` at all.
+
+- `enable-nix-preload` can be set to `false` to disable preloading Composer
+  cache into the Nix store. This preloading is intended to speed up a local
+  `nix-build`, because Nix will not have to download dependencies again.
+  Preloading does mean another copy of dependencies on disk, even if you don't
+  do local Nix builds, but the size is usually not an issue on modern disks.
+
+[niv]: https://github.com/nmattia/niv

@@ -18,7 +18,7 @@ class NixGenerator
     private $fs;
     private $cacheDir;
     private $collected;
-    public $canPreload;
+    public $shouldPreload;
 
     public function __construct(Composer $composer, IOInterface $io)
     {
@@ -32,8 +32,11 @@ class NixGenerator
 
         $this->collected = [];
 
-        $exeFinder = new ExecutableFinder;
-        $this->canPreload = (bool) $exeFinder->find('nix-store');
+        $this->shouldPreload = $composer->getPackage()->getExtra()['enable-nix-preload'] ?? true;
+        if ($this->shouldPreload) {
+            $exeFinder = new ExecutableFinder;
+            $this->shouldPreload = (bool) $exeFinder->find('nix-store');
+        }
     }
 
     public function collect(): void
@@ -173,17 +176,18 @@ class NixGenerator
         }
 
         // Use the root package name as default derivation name.
-        $projectName = self::nixString(self::safeNixStoreName(
-            $this->composer->getPackage()->getName())
-        );
+        $package = $this->composer->getPackage();
+        $projectName = self::nixString(self::safeNixStoreName($package->getName()));
 
         // Generate composer-project.nix.
+        $projectFile = $package->getExtra()['nix-expr-path'] ?? 'composer-project.nix';
         ob_start();
         require __DIR__ . '/../res/composer-project.nix.php';
-        file_put_contents('composer-project.nix', ob_get_clean());
+        file_put_contents($projectFile, ob_get_clean());
 
         // Generate default.nix if it does not exist yet.
-        if (!file_exists('default.nix') && !file_exists('flake.nix')) {
+        $generateDefaultNix = $package->getExtra()['generate-default-nix'] ?? true;
+        if ($generateDefaultNix && !file_exists('default.nix') && !file_exists('flake.nix')) {
             ob_start();
             require __DIR__ . '/../res/default.nix.php';
             file_put_contents('default.nix', ob_get_clean());
