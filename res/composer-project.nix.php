@@ -57,6 +57,8 @@ in stdenv.mkDerivation {
 
     # Build the cache directory contents.
     source ${collectCacheScript}
+
+    # Replace local package paths with their Nix store equivalent.
     source ${replaceLocalPaths}
 
     # Store the absolute path to Composer for the 'composer' alias.
