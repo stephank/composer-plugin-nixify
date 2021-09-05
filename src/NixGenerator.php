@@ -54,6 +54,7 @@ class NixGenerator
                 case 'gzip':
                 case 'phar':
                 case 'rar':
+                    $type = 'cache';
                     $urls = $package->getDistUrls();
 
                     // Cache is keyed by URL. Use the first URL to derive a
@@ -72,11 +73,20 @@ class NixGenerator
                     // Collect package info.
                     $name = self::safeNixStoreName($package->getUniqueName());
                     $sha256 = @hash_file('sha256', $this->cacheDir . $cacheFile);
-                    $this->collected[] = compact('package', 'name', 'urls', 'cacheFile', 'sha256');
+                    $this->collected[] = compact('package', 'type', 'name', 'urls', 'cacheFile', 'sha256');
 
                     if ($sha256 === false) {
                         $numToFetch += 1;
                     }
+
+                    break;
+
+                case 'path':
+                    $type = 'local';
+                    $name = self::safeNixStoreName($package->getName());
+                    $path = $package->getDistUrl();
+
+                    $this->collected[] = compact('package', 'type', 'name', 'path');
 
                     break;
 
@@ -108,7 +118,7 @@ class NixGenerator
             $this->fs->ensureDirectoryExists($tempDir);
             try {
                 foreach ($this->collected as &$info) {
-                    if ($info['sha256'] !== false) {
+                    if ($info['type'] !== 'cache' || $info['sha256'] !== false) {
                         continue;
                     }
 
@@ -154,6 +164,10 @@ class NixGenerator
         // Build Nix code for cache entries.
         $cacheEntries = "[\n";
         foreach ($this->collected as $info) {
+            if ($info['type'] !== 'cache') {
+                continue;
+            }
+
             $cacheEntries .= sprintf(
                 "    { name = %s; filename = %s; sha256 = %s; urls = %s; }\n",
                 self::nixString($info['name']),
@@ -163,6 +177,21 @@ class NixGenerator
             );
         }
         $cacheEntries .= '  ]';
+
+        $localPackages = "[\n";
+        foreach ($this->collected as $info) {
+            if ($info['type'] !== 'local') {
+                continue;
+            }
+
+            $localPackages .= sprintf(
+                "    { path = %s; string = %s; }\n",
+                $info['path'],
+                self::nixString($info['path'])
+            );
+        }
+        $localPackages .= '  ]';
+
 
         // If the user bundled Composer, use that in the Nix build as well.
         $cwd = getcwd() . '/';
@@ -207,6 +236,9 @@ class NixGenerator
         try {
             $toPreload = [];
             foreach ($this->collected as $info) {
+                if ($info['type'] !== 'cache') {
+                    continue;
+                }
                 $storePath = NixUtils::computeFixedOutputStorePath($info['name'], 'sha256', $info['sha256']);
                 if (!file_exists($storePath)) {
                     // The nix-store command requires a correct filename on disk, so we

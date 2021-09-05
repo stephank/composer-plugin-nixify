@@ -14,6 +14,7 @@ let
 
   composerPath = <?php echo $composerPath; ?>;
   cacheEntries = <?php echo $cacheEntries; ?>;
+  localPackages = <?php echo $localPackages; ?>;
 
   # Shell snippet to collect all project dependencies.
   collectCacheScript = writeText "collect-cache.sh" (
@@ -25,6 +26,12 @@ let
         cp ${escapeShellArg (fetcher args)} "$cacheFilePath"
       )
     '') cacheEntries
+  );
+
+  replaceLocalPaths = writeText "replace-local-paths.sh" (
+    concatMapStrings (args: ''
+      sed -i -e "s|\"${args.string}\"|\"${args.path}\"|" composer.lock
+    '') localPackages
   );
 
 in stdenv.mkDerivation {
@@ -50,6 +57,9 @@ in stdenv.mkDerivation {
 
     # Build the cache directory contents.
     source ${collectCacheScript}
+
+    # Replace local package paths with their Nix store equivalent.
+    source ${replaceLocalPaths}
 
     # Store the absolute path to Composer for the 'composer' alias.
     export NIX_COMPOSER_PATH="$(readlink -f ${escapeShellArg composerPath})"
