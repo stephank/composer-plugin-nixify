@@ -8,6 +8,7 @@ class CommandProvider implements \Composer\Plugin\Capability\CommandProvider
     {
         return [
             new InstallBinCommand,
+            new NixifyCommand,
         ];
     }
 }
