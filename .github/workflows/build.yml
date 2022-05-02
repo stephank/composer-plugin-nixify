@@ -8,13 +8,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ['7.3', '7.4', '8.0', '8.1']
-        composer: ['v1', 'v2']
+        php: ['7.4', '8.0', '8.1']
+        composer: ['v2']
     steps:
 
     - name: Checkout
       uses: actions/checkout@v2
       with:
+        fetch-depth: 1
         path: composer-plugin-nixify
 
     - name: Setup PHP

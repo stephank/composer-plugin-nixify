@@ -1,5 +1,10 @@
 <?php
 
+/**
+ * For the full copyright and license information, please view
+ * the LICENSE file that was distributed with this source code.
+ */
+
 declare(strict_types=1);
 
 namespace Nixify;
@@ -14,6 +19,8 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Process\ExecutableFinder;
 
+use function dirname;
+
 final class InstallBinCommand extends BaseCommand
 {
     protected function configure()
@@ -21,8 +28,7 @@ final class InstallBinCommand extends BaseCommand
         $this
             ->setName('nixify-install-bin')
             ->setDescription('Internal Nixify plugin command to create executable wrappers')
-            ->addArgument('bin-dir', InputArgument::REQUIRED, 'Directory to create wrappers in')
-        ;
+            ->addArgument('bin-dir', InputArgument::REQUIRED, 'Directory to create wrappers in');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -32,13 +38,16 @@ final class InstallBinCommand extends BaseCommand
         $fs = new Filesystem();
 
         $scriptFiles = $this->requireComposer()->getPackage()->getBinaries();
+
         foreach ($scriptFiles as $scriptFile) {
             $scriptPath = realpath($scriptFile);
+
             if (!$scriptPath) {
                 $io->writeError(sprintf(
                     '<warning>Skipped binary "%s" because the file does not exist</warning>',
                     $scriptFile
                 ));
+
                 continue;
             }
 
@@ -48,12 +57,13 @@ final class InstallBinCommand extends BaseCommand
             // In Nix, the PHP executable is a small shell wrapper. Using this
             // as a shebang fails at least on macOS. Detect a PHP shebang, and
             // make sure PHP is properly invoked in our binary wrapper.
-            if ($caller === 'php') {
-                $exeFinder = new ExecutableFinder;
+            if ('php' === $caller) {
+                $exeFinder = new ExecutableFinder();
                 $interpPath = $exeFinder->find($caller);
+
                 if ($interpPath) {
                     $interpPath = ProcessExecutor::escape($interpPath);
-                    $scriptPath = "$interpPath $scriptPath";
+                    $scriptPath = "{$interpPath} {$scriptPath}";
                 }
             }
 
@@ -61,6 +71,7 @@ final class InstallBinCommand extends BaseCommand
             $fs->ensureDirectoryExists(dirname($outputPath));
 
             ob_start();
+
             require __DIR__ . '/../res/bin-wrapper.sh.php';
             file_put_contents($outputPath, ob_get_clean());
 

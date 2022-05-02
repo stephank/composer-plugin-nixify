@@ -1,5 +1,10 @@
 <?php
 
+/**
+ * For the full copyright and license information, please view
+ * the LICENSE file that was distributed with this source code.
+ */
+
 declare(strict_types=1);
 
 namespace Nixify;
@@ -13,27 +18,6 @@ use Composer\Script\Event;
 
 final class Plugin implements PluginInterface, Capable, EventSubscriberInterface
 {
-    public function postInstall(Event $event)
-    {
-        $generator = new NixGenerator($event->getComposer(), $event->getIO());
-        if ($generator->shouldPreload) {
-            $generator->collect();
-            $generator->preload();
-        }
-    }
-
-    public function postUpdate(Event $event)
-    {
-        $generator = new NixGenerator($event->getComposer(), $event->getIO());
-        $generator->collect();
-        $generator->generate();
-        if ($generator->shouldPreload) {
-            $generator->preload();
-        }
-    }
-
-    // PluginInterface
-
     public function activate(Composer $composer, IOInterface $io)
     {
     }
@@ -42,17 +26,6 @@ final class Plugin implements PluginInterface, Capable, EventSubscriberInterface
     {
     }
 
-    public function uninstall(Composer $composer, IOInterface $io)
-    {
-        if (file_exists('composer-project.nix') || file_exists('default.nix')) {
-            $io->writeError(
-                '<info>You may also want to delete the generated "*.nix" files.</info>'
-            );
-        }
-    }
-
-    // Capable
-
     public function getCapabilities()
     {
         return [
@@ -60,13 +33,34 @@ final class Plugin implements PluginInterface, Capable, EventSubscriberInterface
         ];
     }
 
-    // EventSubscriberInterface
-
     public static function getSubscribedEvents()
     {
         return [
             'post-install-cmd' => 'postInstall',
             'post-update-cmd' => 'postUpdate',
         ];
+    }
+
+    public function postInstall(Event $event)
+    {
+        $generator = new NixGenerator($event->getComposer(), $event->getIO());
+
+        if ($generator->shouldPreload) {
+            $generator->preload();
+        }
+    }
+
+    public function postUpdate(Event $event)
+    {
+        $generator = new NixGenerator($event->getComposer(), $event->getIO());
+        $generator->generate();
+
+        if ($generator->shouldPreload) {
+            $generator->preload();
+        }
+    }
+
+    public function uninstall(Composer $composer, IOInterface $io)
+    {
     }
 }
