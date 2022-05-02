@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Nixify;
 
 use Composer\Composer;
@@ -9,7 +11,7 @@ use Composer\Plugin\Capable;
 use Composer\Plugin\PluginInterface;
 use Composer\Script\Event;
 
-class Plugin implements PluginInterface, Capable, EventSubscriberInterface
+final class Plugin implements PluginInterface, Capable, EventSubscriberInterface
 {
     public function postInstall(Event $event)
     {

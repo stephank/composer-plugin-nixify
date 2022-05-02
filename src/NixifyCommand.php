@@ -1,16 +1,15 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Nixify;
 
-use Composer\Installer\BinaryInstaller;
-use Composer\Util\Filesystem;
-use Composer\Util\ProcessExecutor;
-use Symfony\Component\Console\Input\InputArgument;
+use Composer\Command\BaseCommand;
+use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Process\ExecutableFinder;
 
-class NixifyCommand extends \Composer\Command\BaseCommand
+final class NixifyCommand extends BaseCommand
 {
     protected function configure()
     {
@@ -20,13 +19,16 @@ class NixifyCommand extends \Composer\Command\BaseCommand
         ;
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output)
+    protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $generator = new NixGenerator($this->getComposer(), $this->getIO());
+        $generator = new NixGenerator($this->requireComposer(), $this->getIO());
         $generator->collect();
         $generator->generate();
+
         if ($generator->shouldPreload) {
             $generator->preload();
         }
+
+        return Command::SUCCESS;
     }
 }

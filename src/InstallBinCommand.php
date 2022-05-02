@@ -1,16 +1,20 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Nixify;
 
+use Composer\Command\BaseCommand;
 use Composer\Installer\BinaryInstaller;
 use Composer\Util\Filesystem;
 use Composer\Util\ProcessExecutor;
+use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Process\ExecutableFinder;
 
-class InstallBinCommand extends \Composer\Command\BaseCommand
+final class InstallBinCommand extends BaseCommand
 {
     protected function configure()
     {
@@ -21,13 +25,13 @@ class InstallBinCommand extends \Composer\Command\BaseCommand
         ;
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output)
+    protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $binDir = $input->getArgument('bin-dir');
         $io = $this->getIO();
         $fs = new Filesystem();
 
-        $scriptFiles = $this->getComposer()->getPackage()->getBinaries();
+        $scriptFiles = $this->requireComposer()->getPackage()->getBinaries();
         foreach ($scriptFiles as $scriptFile) {
             $scriptPath = realpath($scriptFile);
             if (!$scriptPath) {
@@ -63,6 +67,6 @@ class InstallBinCommand extends \Composer\Command\BaseCommand
             chmod($outputPath, 0755);
         }
 
-        return 0;
+        return Command::SUCCESS;
     }
 }

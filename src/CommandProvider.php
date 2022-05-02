@@ -2,9 +2,11 @@
 
 namespace Nixify;
 
-class CommandProvider implements \Composer\Plugin\Capability\CommandProvider
+use Composer\Plugin\Capability\CommandProvider as CapabilityCommandProvider;
+
+final class CommandProvider implements CapabilityCommandProvider
 {
-    public function getCommands()
+    public function getCommands(): array
     {
         return [
             new InstallBinCommand,

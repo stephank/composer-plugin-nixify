@@ -1,23 +1,28 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Nixify;
 
+use ArrayIterator;
 use Composer\Composer;
+use Composer\Config;
 use Composer\IO\IOInterface;
+use Composer\Package\BasePackage;
 use Composer\Package\Loader\ArrayLoader;
 use Composer\Util\Filesystem;
 use Composer\Util\ProcessExecutor;
 use Composer\Util\Url as UrlUtil;
+use Generator;
 use Symfony\Component\Process\ExecutableFinder;
 
-class NixGenerator
+final class NixGenerator
 {
-    private $composer;
-    private $io;
-    private $config;
-    private $fs;
-    private $cacheDir;
-    private $collected;
+    private Composer $composer;
+    private IOInterface $io;
+    private Config $config;
+    private Filesystem $fs;
+    private string $cacheDir;
     public $shouldPreload;
 
     public function __construct(Composer $composer, IOInterface $io)
@@ -30,22 +35,16 @@ class NixGenerator
         // From: `Cache::__construct()`
         $this->cacheDir = rtrim($this->config->get('cache-files-dir'), '/\\') . '/';
 
-        $this->collected = [];
-
         $this->shouldPreload = $composer->getPackage()->getExtra()['enable-nix-preload'] ?? true;
+
         if ($this->shouldPreload) {
             $exeFinder = new ExecutableFinder;
             $this->shouldPreload = (bool) $exeFinder->find('nix-store');
         }
     }
 
-    public function collect(): void
+    public function collect(): Generator
     {
-        // Collect lockfile packages we know how to create Nix fetch
-        // derivations for.
-        $this->collected = [];
-        $numToFetch = 0;
-
         foreach ($this->iterLockedPackages() as $package) {
             switch ($package->getDistType()) {
                 case 'tar':
@@ -59,10 +58,10 @@ class NixGenerator
 
                     // Cache is keyed by URL. Use the first URL to derive a
                     // cache key, because Composer also tries URLs in order.
-                    $cacheUrl = $urls[0];
+                    $cacheUrl = current($urls);
 
                     // From: `FileDownloader::getCacheKey()`
-                    if ($package->getDistReference()) {
+                    if (null !== $package->getDistReference()) {
                         $cacheUrl = UrlUtil::updateDistReference($this->config, $cacheUrl, $package->getDistReference());
                     }
                     $cacheKey = sprintf('%s/%s.%s', $package->getName(), sha1($cacheUrl), $package->getDistType());
@@ -72,12 +71,12 @@ class NixGenerator
 
                     // Collect package info.
                     $name = self::safeNixStoreName($package->getUniqueName());
-                    $sha256 = @hash_file('sha256', $this->cacheDir . $cacheFile);
-                    $this->collected[] = compact('package', 'type', 'name', 'urls', 'cacheFile', 'sha256');
 
-                    if ($sha256 === false) {
-                        $numToFetch += 1;
+                    if (false === $sha256 = hash_file('sha256', $this->cacheDir . $cacheFile)) {
+                        $sha256 = $this->fetch($package, $type, $name, $cacheFile);
                     }
+
+                    yield compact('package', 'type', 'name', 'urls', 'cacheFile', 'sha256');
 
                     break;
 
@@ -86,13 +85,13 @@ class NixGenerator
                     $name = self::safeNixStoreName($package->getName());
                     $path = $package->getDistUrl();
 
-                    $this->collected[] = compact('package', 'type', 'name', 'path');
+                    yield compact('package', 'type', 'name', 'path');
 
                     break;
 
                 default:
                     $this->io->warning(sprintf(
-                        "Package '%s' has dist-type '%s' which is not support by the Nixify plugin",
+                        "Package '%s' has dist-type '%s' which is not supported by the Nixify plugin",
                         $package->getPrettyName(),
                         $package->getDistType()
                     ));
@@ -100,98 +99,100 @@ class NixGenerator
             }
         }
 
+    }
+
+    private function fetch(
+        BasePackage $package,
+        string $name,
+        string $cacheFile
+    ): string {
         // If some packages were previously installed but since removed from
         // cache, `sha256` will be false for those packages in `collected`.
         // Here, we amend cache by refetching, so we can then determine the
         // file hash again.
-        if ($numToFetch !== 0) {
-            $this->io->writeError(sprintf(
-                '<info>Nixify could not find cache for %d package(s), which will be refetched</info>',
-                $numToFetch
-            ));
+        $downloader = $this->composer->getDownloadManager()->getDownloader('file');
 
-            $downloader = $this->composer->getDownloadManager()->getDownloader('file');
-            $reflectDownload = new \ReflectionMethod(get_class($downloader), 'download');
-            $isComposer2 = $reflectDownload->getNumberOfParameters() === 4;
+        $tempDir = $this->cacheDir . '.nixify-tmp-' . substr(md5(uniqid('', true)), 0, 8);
+        $this->fs->ensureDirectoryExists($tempDir);
 
-            $tempDir = $this->cacheDir . '.nixify-tmp-' . substr(md5(uniqid('', true)), 0, 8);
-            $this->fs->ensureDirectoryExists($tempDir);
-            try {
-                foreach ($this->collected as &$info) {
-                    if ($info['type'] !== 'cache' || $info['sha256'] !== false) {
-                        continue;
-                    }
+        $this->io->writeError(sprintf(
+            '<info>Nixify could not find cache for package $s, which will be refetched</info>',
+            $name
+        ));
 
-                    $package = $info['package'];
+        $this->io->writeError(sprintf(
+            '  - Fetching <info>%s</info> (<comment>%s</comment>): ',
+            $package->getName(),
+            $package->getFullPrettyVersion()
+        ), false);
 
-                    $this->io->writeError(sprintf(
-                        '  - Fetching <info>%s</info> (<comment>%s</comment>): ',
-                        $package->getName(),
-                        $package->getFullPrettyVersion()
-                    ), false);
+        $tempFile = '';
+        $promise = $downloader->download($package, $tempDir, null, false)
+            ->then(function ($filename) use (&$tempFile) {
+                $tempFile = $filename;
+            });
+        $this->composer->getLoop()->wait([$promise]);
+        $this->io->writeError('OK');
 
-                    $tempFile = '';
-                    if ($isComposer2) {
-                        $promise = $downloader->download($package, $tempDir, null, false)
-                            ->then(function ($filename) use (&$tempFile) {
-                                $tempFile = $filename;
-                            });
-                        $this->composer->getLoop()->wait([$promise]);
-                        $this->io->writeError('OK');
-                    } else {
-                        $tempFile = $downloader->download($package, $tempDir, false);
-                        $this->io->writeError('');
-                    }
+        $cachePath = sprintf('%s%s', $this->cacheDir, $cacheFile);
+        $this->fs->ensureDirectoryExists(dirname($cachePath));
+        $this->fs->rename($tempFile, $cachePath);
+        $hash = hash_file('sha256', $cachePath);
+        $this->fs->removeDirectory($tempDir);
 
-
-                    $cachePath = $this->cacheDir . $info['cacheFile'];
-                    $this->fs->ensureDirectoryExists(dirname($cachePath));
-                    $this->fs->rename($tempFile, $cachePath);
-
-                    $info['sha256'] = hash_file('sha256', $cachePath);
-                }
-            } finally {
-                $this->fs->removeDirectory($tempDir);
-            }
-        }
+        return $hash;
     }
 
     /**
      * Generates Nix files based on the lockfile and cache.
      */
-    public function generate(): void
+    public function generate(iterable $collected): void
     {
+        $collected = iterator_to_array($this->collect());
+
         // Build Nix code for cache entries.
-        $cacheEntries = "[\n";
-        foreach ($this->collected as $info) {
-            if ($info['type'] !== 'cache') {
-                continue;
-            }
+        $cacheEntries = sprintf(
+            '[\n%s\n]',
+            array_reduce(
+                array_filter($collected, static fn (array $info): bool => $info['type'] === 'cache'),
+                static function (string $carry, array $info): string
+                {
+                    return sprintf(
+                        '%s%s',
+                        $carry,
+                        sprintf(
+                            "{ name = %s; filename = %s; sha256 = %s; urls = %s; }\n",
+                            self::nixString($info['name']),
+                            self::nixString($info['cacheFile']),
+                            self::nixString($info['sha256']),
+                            self::nixStringArray($info['urls'])
+                        )
+                    );
+                },
+                ''
+            )
+        );
 
-            $cacheEntries .= sprintf(
-                "    { name = %s; filename = %s; sha256 = %s; urls = %s; }\n",
-                self::nixString($info['name']),
-                self::nixString($info['cacheFile']),
-                self::nixString($info['sha256']),
-                self::nixStringArray($info['urls'])
-            );
-        }
-        $cacheEntries .= '  ]';
-
-        $localPackages = "[\n";
-        foreach ($this->collected as $info) {
-            if ($info['type'] !== 'local') {
-                continue;
-            }
-
-            $localPackages .= sprintf(
-                "    { path = %s; string = %s; }\n",
-                $info['path'],
-                self::nixString($info['path'])
-            );
-        }
-        $localPackages .= '  ]';
-
+        // Build Nix code for local entries.
+        $localPackages = sprintf(
+            '[\n%s\n]',
+            array_reduce(
+                array_filter($collected, static fn (array $info): bool => $info['type'] === 'local'),
+                static function (string $carry, array $info): string
+                {
+                    return sprintf(
+                        '%s%s',
+                        $carry,
+                        sprintf(
+                            "    { path = %s; string = %s; }\n",
+                            $info['path'],
+                            self::nixString($info['path']),
+                        )
+                    );
+                },
+                ''
+            )
+        );
 
         // If the user bundled Composer, use that in the Nix build as well.
         $cwd = getcwd() . '/';
@@ -210,16 +211,24 @@ class NixGenerator
 
         // Generate composer-project.nix.
         $projectFile = $package->getExtra()['nix-expr-path'] ?? 'composer-project.nix';
-        ob_start();
-        require __DIR__ . '/../res/composer-project.nix.php';
-        file_put_contents($projectFile, ob_get_clean());
+
+        $search = [
+            '{$composerPath}' => $composerPath,
+            '{$projectName}' => $projectName,
+            '{$cacheEntries}' => $cacheEntries,
+            '{$localEntries}' => $localPackages,
+        ];
+        $content = file_get_contents(__DIR__ . '/../res/composer-project.nix.php');
+
+        $replaced_string = str_replace(array_keys($search), array_values($search), $content);
+
+        file_put_contents($projectFile, $replaced_string);
 
         // Generate default.nix if it does not exist yet.
         $generateDefaultNix = $package->getExtra()['generate-default-nix'] ?? true;
+
         if ($generateDefaultNix && !file_exists('default.nix') && !file_exists('flake.nix')) {
-            ob_start();
-            require __DIR__ . '/../res/default.nix.php';
-            file_put_contents('default.nix', ob_get_clean());
+            file_put_contents('default.nix', file_get_contents(__DIR__ . '/../res/default.nix.php'));
             $this->io->writeError(
                 '<info>A minimal default.nix was created. You may want to customize it.</info>'
             );

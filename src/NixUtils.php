@@ -1,8 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Nixify;
 
-class NixUtils
+final class NixUtils
 {
     private const CHARSET = "0123456789abcdfghijklmnpqrsvwxyz";
 

@@ -10,7 +10,10 @@
     }
   },
   "require": {
-    "composer-plugin-api": "^1.1 || ^2.0"
+    "composer-plugin-api": "^2.3"
+  },
+  "require-dev": {
+    "composer/composer": "^2.3"
   },
   "extra": {
     "class": "Nixify\\Plugin"

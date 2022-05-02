@@ -12,9 +12,9 @@ with lib;
 
 let
 
-  composerPath = <?php echo $composerPath; ?>;
-  cacheEntries = <?php echo $cacheEntries; ?>;
-  localPackages = <?php echo $localPackages; ?>;
+  composerPath = {$composerPath};
+  cacheEntries = {$cacheEntries};
+  localPackages = {$localPackages};
 
   # Shell snippet to collect all project dependencies.
   collectCacheScript = writeText "collect-cache.sh" (
@@ -35,7 +35,7 @@ let
   );
 
 in stdenv.mkDerivation {
-  name = <?php echo $projectName; ?>;
+  name = {$projectName};
   inherit src;
 
   # Make sure the build uses the right PHP version everywhere.
