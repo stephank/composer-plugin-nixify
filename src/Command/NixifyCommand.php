@@ -7,16 +7,17 @@
 
 declare(strict_types=1);
 
-namespace Nixify;
+namespace Nixify\Command;
 
 use Composer\Command\BaseCommand;
+use Nixify\Service\NixGenerator;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
 final class NixifyCommand extends BaseCommand
 {
-    protected function configure()
+    protected function configure(): void
     {
         $this
             ->setName('nixify')
@@ -26,11 +27,12 @@ final class NixifyCommand extends BaseCommand
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $generator = new NixGenerator($this->requireComposer(), $this->getIO());
-        $generator->collect();
-        $generator->generate();
+        $collected = iterator_to_array($generator->collect());
 
-        if ($generator->shouldPreload) {
-            $generator->preload();
+        $generator->generate($collected);
+
+        if ($generator->shouldPreload()) {
+            $generator->preload($collected);
         }
 
         return Command::SUCCESS;

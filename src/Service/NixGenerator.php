@@ -7,7 +7,7 @@
 
 declare(strict_types=1);
 
-namespace Nixify;
+namespace Nixify\Service;
 
 use Composer\Composer;
 use Composer\Config;
@@ -18,18 +18,18 @@ use Composer\Util\Filesystem;
 use Composer\Util\ProcessExecutor;
 use Composer\Util\Url as UrlUtil;
 use Generator;
+use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Process\ExecutableFinder;
 
 use function count;
 use function dirname;
 use function strlen;
 
+use const JSON_PRETTY_PRINT;
 use const JSON_UNESCAPED_SLASHES;
 
 final class NixGenerator
 {
-    public $shouldPreload;
-
     private string $cacheDir;
 
     private Composer $composer;
@@ -39,6 +39,8 @@ final class NixGenerator
     private Filesystem $fs;
 
     private IOInterface $io;
+
+    private bool $shouldPreload;
 
     public function __construct(Composer $composer, IOInterface $io)
     {
@@ -77,9 +79,19 @@ final class NixGenerator
 
                     // From: `FileDownloader::getCacheKey()`
                     if (null !== $package->getDistReference()) {
-                        $cacheUrl = UrlUtil::updateDistReference($this->config, $cacheUrl, $package->getDistReference());
+                        $cacheUrl = UrlUtil::updateDistReference(
+                            $this->config,
+                            $cacheUrl,
+                            $package->getDistReference()
+                        );
                     }
-                    $cacheKey = sprintf('%s/%s.%s', $package->getName(), sha1($cacheUrl), $package->getDistType());
+
+                    $cacheKey = sprintf(
+                        '%s/%s.%s',
+                        $package->getName(),
+                        sha1($cacheUrl),
+                        $package->getDistType()
+                    );
 
                     // From: `Cache::read()`
                     $cacheFile = preg_replace('{[^a-z0-9_./]}i', '-', $cacheKey);
@@ -88,7 +100,7 @@ final class NixGenerator
                     $name = self::safeNixStoreName($package->getUniqueName());
 
                     if (false === $sha256 = hash_file('sha256', $this->cacheDir . $cacheFile)) {
-                        $sha256 = $this->fetch($package, $type, $name, $cacheFile);
+                        $sha256 = $this->fetch($package, $name, $cacheFile);
                     }
 
                     yield compact('package', 'type', 'name', 'urls', 'cacheFile', 'sha256');
@@ -119,88 +131,58 @@ final class NixGenerator
     /**
      * Generates Nix files based on the lockfile and cache.
      */
-    public function generate(): void
+    public function generate(array $collected): void
     {
-        $collected = iterator_to_array($this->collect());
+        $package = $this->composer->getPackage();
 
         // Build Nix code for cache entries.
-        $cacheEntries = sprintf(
-            '[\n%s\n]',
-            array_reduce(
-                array_filter($collected, static fn (array $info): bool => 'cache' === $info['type']),
-                static function (string $carry, array $info): string {
-                    return sprintf(
-                        '%s%s',
-                        $carry,
-                        sprintf(
-                            "{ name = %s; filename = %s; sha256 = %s; urls = %s; }\n",
-                            self::nixString($info['name']),
-                            self::nixString($info['cacheFile']),
-                            self::nixString($info['sha256']),
-                            self::nixStringArray($info['urls'])
-                        )
-                    );
-                },
-                ''
-            )
+        $cacheEntries = array_filter(
+            $collected,
+            static fn (array $info): bool => 'cache' === $info['type']
         );
 
         // Build Nix code for local entries.
-        $localPackages = sprintf(
-            '[\n%s\n]',
-            array_reduce(
-                array_filter($collected, static fn (array $info): bool => 'local' === $info['type']),
-                static function (string $carry, array $info): string {
-                    return sprintf(
-                        '%s%s',
-                        $carry,
-                        sprintf(
-                            "    { path = %s; string = %s; }\n",
-                            $info['path'],
-                            self::nixString($info['path']),
-                        )
-                    );
-                },
-                ''
-            )
+        $localEntries = array_filter(
+            $collected,
+            static fn (array $info): bool => 'local' === $info['type']
         );
 
         // If the user bundled Composer, use that in the Nix build as well.
         $cwd = getcwd() . '/';
         $composerPath = realpath($_SERVER['PHP_SELF']);
 
-        if (substr($composerPath, 0, strlen($cwd)) === $cwd) {
-            $composerPath = self::nixString(substr($composerPath, strlen($cwd)));
-        } else {
-            // Otherwise, use Composer from Nixpkgs. Don't reference the wrapper,
-            // which depends on a specific PHP version, but the src phar instead.
-            $composerPath = 'phpPackages.composer.src';
-        }
+        $composerPath = substr($composerPath, 0, strlen($cwd)) === $cwd
+            ? substr($composerPath, strlen($cwd))
+            : null;
 
-        // Use the root package name as default derivation name.
-        $package = $this->composer->getPackage();
-        $projectName = self::nixString(self::safeNixStoreName($package->getName()));
-
-        // Generate composer-project.nix.
-        $projectFile = $package->getExtra()['nix-expr-path'] ?? 'composer-project.nix';
-
-        $search = [
-            '{$composerPath}' => $composerPath,
-            '{$projectName}' => $projectName,
-            '{$cacheEntries}' => $cacheEntries,
-            '{$localEntries}' => $localPackages,
+        $jsonData = [
+            'cacheEntries' => $cacheEntries,
+            'composerPath' => $composerPath,
+            'localEntries' => $localEntries,
+            'projectName' => $package->getExtra()['nix-expr-path'] ?? 'composer-project.nix',
         ];
-        $content = file_get_contents(__DIR__ . '/../res/composer-project.nix.php');
 
-        $replaced_string = str_replace(array_keys($search), array_values($search), $content);
+        $searchNreplace = [
+            '{{json}}' => json_encode(
+                array_filter($jsonData),
+                JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES
+            ),
+        ];
 
-        file_put_contents($projectFile, $replaced_string);
+        file_put_contents(
+            $package->getExtra()['nix-expr-path'] ?? 'composer-project.nix',
+            str_replace(
+                array_keys($searchNreplace),
+                array_values($searchNreplace),
+                file_get_contents(__DIR__ . '/../res/composer-project.nix')
+            )
+        );
 
         // Generate default.nix if it does not exist yet.
         $generateDefaultNix = $package->getExtra()['generate-default-nix'] ?? true;
 
         if ($generateDefaultNix && !file_exists('default.nix') && !file_exists('flake.nix')) {
-            file_put_contents('default.nix', file_get_contents(__DIR__ . '/../res/default.nix.php'));
+            file_put_contents('default.nix', file_get_contents(__DIR__ . '/../res/default.nix'));
             $this->io->writeError(
                 '<info>A minimal default.nix was created. You may want to customize it.</info>'
             );
@@ -210,64 +192,107 @@ final class NixGenerator
     /**
      * Preload packages into the Nix store.
      */
-    public function preload(): void
+    public function preload(array $collected): void
     {
-        $tempDir = $this->cacheDir . '.nixify-tmp-' . substr(md5(uniqid('', true)), 0, 8);
-        $this->fs->ensureDirectoryExists($tempDir);
+        $tempDir = sprintf(
+            '%s.nixify-tmp-%s',
+            $this->cacheDir,
+            substr(md5(uniqid('', true)), 0, 8)
+        );
 
-        try {
-            $toPreload = [];
+        $toPreload = array_filter(
+            array_map(
+                function (array $info) use ($tempDir): ?string {
+                    $storePath = NixUtils::computeFixedOutputStorePath(
+                        $info['name'],
+                        'sha256',
+                        $info['sha256']
+                    );
 
-            foreach ($this->collected as $info) {
-                if ('cache' !== $info['type']) {
-                    continue;
-                }
-                $storePath = NixUtils::computeFixedOutputStorePath($info['name'], 'sha256', $info['sha256']);
+                    if (file_exists($storePath)) {
+                        return null;
+                    }
 
-                if (!file_exists($storePath)) {
                     // The nix-store command requires a correct filename on disk, so we
                     // prepare a temporary directory containing all the files to preload.
-                    $src = $this->cacheDir . $info['cacheFile'];
                     $dst = sprintf('%s/%s', $tempDir, $info['name']);
-
-                    if (!copy($src, $dst)) {
-                        $this->io->writeError(
-                            '<error>Preloading into Nix store failed: could not write to temporary directory.</error>'
+                    $copy = $this
+                        ->fs
+                        ->copy(
+                            sprintf(
+                                '%s%s',
+                                $this->cacheDir,
+                                $info['cacheFile']
+                            ),
+                            $dst
                         );
 
-                        break;
+                    if (false === $copy) {
+                        $this
+                            ->io
+                            ->writeError(
+                                '<error>' .
+                                'Preloading into Nix store failed: could' .
+                                ' not write to temporary directory.' .
+                                '</error>'
+                            );
+
+                        return null;
                     }
 
-                    $toPreload[] = $dst;
+                    return $dst;
+                },
+                array_filter(
+                    $collected,
+                    static fn (array $info): bool => 'cache' === $info['type']
+                )
+            )
+        );
+
+        if ([] === $toPreload) {
+            return;
+        }
+
+        try {
+            // Preload in batches, to keep the exec arguments reasonable.
+            $process = new ProcessExecutor($this->io);
+            $numPreloaded = 0;
+
+            foreach (array_chunk($toPreload, 100) as $chunk) {
+                $command = sprintf(
+                    'nix-store --add-fixed sha256 %s',
+                    implode(
+                        ' ',
+                        array_map(['Composer\\Util\\ProcessExecutor', 'escape'], $chunk)
+                    )
+                );
+
+                if ($process->execute($command, $output) !== Command::SUCCESS) {
+                    $this->io->writeError('<error>Preloading into Nix store failed.</error>');
+                    $this->io->writeError($output);
+
+                    break;
                 }
+
+                $numPreloaded += count($chunk);
             }
 
-            if (!empty($toPreload)) {
-                // Preload in batches, to keep the exec arguments reasonable.
-                $process = new ProcessExecutor($this->io);
-                $numPreloaded = 0;
-
-                foreach (array_chunk($toPreload, 100) as $chunk) {
-                    $command = 'nix-store --add-fixed sha256 '
-                        . implode(' ', array_map(['Composer\\Util\\ProcessExecutor', 'escape'], $chunk));
-
-                    if ($process->execute($command, $output) !== 0) {
-                        $this->io->writeError('<error>Preloading into Nix store failed.</error>');
-                        $this->io->writeError($output);
-
-                        break;
-                    }
-                    $numPreloaded += count($chunk);
-                }
-
-                $this->io->writeError(sprintf(
-                    '<info>Preloaded %d packages into the Nix store.</info>',
-                    $numPreloaded
-                ));
-            }
+            $this
+                ->io
+                ->writeError(
+                    sprintf(
+                        '<info>Preloaded %d packages into the Nix store.</info>',
+                        $numPreloaded
+                    )
+                );
         } finally {
             $this->fs->removeDirectory($tempDir);
         }
+    }
+
+    public function shouldPreload(): bool
+    {
+        return $this->shouldPreload;
     }
 
     private function fetch(
@@ -296,10 +321,13 @@ final class NixGenerator
         ), false);
 
         $tempFile = '';
-        $promise = $downloader->download($package, $tempDir, null, false)
-            ->then(static function ($filename) use (&$tempFile) {
-                $tempFile = $filename;
-            });
+        $promise = $downloader
+            ->download($package, $tempDir)
+            ->then(
+                static function (string $filename) use (&$tempFile): void {
+                    $tempFile = $filename;
+                }
+            );
         $this->composer->getLoop()->wait([$promise]);
         $this->io->writeError('OK');
 
@@ -314,8 +342,10 @@ final class NixGenerator
 
     /**
      * Generator function that iterates lockfile packages.
+     *
+     * @return Generator<int, BasePackage>
      */
-    private function iterLockedPackages()
+    private function iterLockedPackages(): Generator
     {
         $locker = $this->composer->getLocker();
 
@@ -333,24 +363,6 @@ final class NixGenerator
         foreach ($data['packages-dev'] ?? [] as $info) {
             yield $loader->load($info);
         }
-    }
-
-    /**
-     * Naive conversion of a string to a Nix literal.
-     */
-    private static function nixString(string $value): string
-    {
-        return json_encode($value, JSON_UNESCAPED_SLASHES);
-    }
-
-    /**
-     * Naive conversion of a string array to a Nix literal.
-     */
-    private static function nixStringArray(array $value): string
-    {
-        $strings = array_map([self::class, 'nixString'], $value);
-
-        return '[ ' . implode(' ', $strings) . ' ]';
     }
 
     /**

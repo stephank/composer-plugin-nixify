@@ -7,7 +7,7 @@
 
 declare(strict_types=1);
 
-namespace Nixify;
+namespace Nixify\Command;
 
 use Composer\Command\BaseCommand;
 use Composer\Installer\BinaryInstaller;
@@ -23,7 +23,7 @@ use function dirname;
 
 final class InstallBinCommand extends BaseCommand
 {
-    protected function configure()
+    protected function configure(): void
     {
         $this
             ->setName('nixify-install-bin')
@@ -61,7 +61,7 @@ final class InstallBinCommand extends BaseCommand
                 $exeFinder = new ExecutableFinder();
                 $interpPath = $exeFinder->find($caller);
 
-                if ($interpPath) {
+                if (null !== $interpPath) {
                     $interpPath = ProcessExecutor::escape($interpPath);
                     $scriptPath = "{$interpPath} {$scriptPath}";
                 }
@@ -70,12 +70,21 @@ final class InstallBinCommand extends BaseCommand
             $outputPath = sprintf('%s/%s', $binDir, basename($scriptFile));
             $fs->ensureDirectoryExists(dirname($outputPath));
 
-            ob_start();
+            $searchNreplace = [
+                '{{scriptPath}}' => $scriptPath,
+            ];
 
-            require __DIR__ . '/../res/bin-wrapper.sh.php';
-            file_put_contents($outputPath, ob_get_clean());
-
-            chmod($outputPath, 0755);
+            $fs
+                ->filePutContentsIfModified(
+                    $outputPath,
+                    str_replace(
+                        array_keys($searchNreplace),
+                        array_values($searchNreplace),
+                        file_get_contents(
+                            __DIR__ . '/../res/bin-wrapper.sh.php',
+                        )
+                    )
+                );
         }
 
         return Command::SUCCESS;

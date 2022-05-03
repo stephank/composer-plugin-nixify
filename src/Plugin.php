@@ -15,25 +15,26 @@ use Composer\IO\IOInterface;
 use Composer\Plugin\Capable;
 use Composer\Plugin\PluginInterface;
 use Composer\Script\Event;
+use Nixify\Service\NixGenerator;
 
 final class Plugin implements PluginInterface, Capable, EventSubscriberInterface
 {
-    public function activate(Composer $composer, IOInterface $io)
+    public function activate(Composer $composer, IOInterface $io): void
     {
     }
 
-    public function deactivate(Composer $composer, IOInterface $io)
+    public function deactivate(Composer $composer, IOInterface $io): void
     {
     }
 
-    public function getCapabilities()
+    public function getCapabilities(): array
     {
         return [
             'Composer\Plugin\Capability\CommandProvider' => 'Nixify\CommandProvider',
         ];
     }
 
-    public static function getSubscribedEvents()
+    public static function getSubscribedEvents(): array
     {
         return [
             'post-install-cmd' => 'postInstall',
@@ -41,22 +42,25 @@ final class Plugin implements PluginInterface, Capable, EventSubscriberInterface
         ];
     }
 
-    public function postInstall(Event $event)
+    public function postInstall(Event $event): void
     {
         $generator = new NixGenerator($event->getComposer(), $event->getIO());
+        $collected = iterator_to_array($generator->collect());
 
-        if ($generator->shouldPreload) {
-            $generator->preload();
+        if ($generator->shouldPreload()) {
+            $generator->preload($collected);
         }
     }
 
-    public function postUpdate(Event $event)
+    public function postUpdate(Event $event): void
     {
         $generator = new NixGenerator($event->getComposer(), $event->getIO());
-        $generator->generate();
+        $collected = iterator_to_array($generator->collect());
 
-        if ($generator->shouldPreload) {
-            $generator->preload();
+        $generator->generate($collected);
+
+        if ($generator->shouldPreload()) {
+            $generator->preload($collected);
         }
     }
 
