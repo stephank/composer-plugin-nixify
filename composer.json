@@ -9,11 +9,17 @@
     },
     "require-dev": {
         "composer/composer": "^2.3",
-        "drupol/php-conventions": "^5.0"
+        "drupol/php-conventions": "^5.0",
+        "phpunit/phpunit": "^9.5"
     },
     "autoload": {
         "psr-4": {
             "Nixify\\": "./src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\Nixify\\": "./tests/"
         }
     },
     "config": {

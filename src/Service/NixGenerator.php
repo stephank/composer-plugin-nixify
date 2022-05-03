@@ -40,6 +40,8 @@ final class NixGenerator
 
     private IOInterface $io;
 
+    private NixUtils $nixUtils;
+
     private bool $shouldPreload;
 
     public function __construct(Composer $composer, IOInterface $io)
@@ -48,6 +50,7 @@ final class NixGenerator
         $this->io = $io;
         $this->config = $composer->getConfig();
         $this->fs = new Filesystem();
+        $this->nixUtils = new NixUtils();
 
         // From: `Cache::__construct()`
         $this->cacheDir = rtrim($this->config->get('cache-files-dir'), '/\\') . '/';
@@ -70,7 +73,6 @@ final class NixGenerator
                 case 'gzip':
                 case 'phar':
                 case 'rar':
-                    $type = 'cache';
                     $urls = $package->getDistUrls();
 
                     // Cache is keyed by URL. Use the first URL to derive a
@@ -97,31 +99,44 @@ final class NixGenerator
                     $cacheFile = preg_replace('{[^a-z0-9_./]}i', '-', $cacheKey);
 
                     // Collect package info.
-                    $name = self::safeNixStoreName($package->getUniqueName());
+                    $name = $this->safeNixStoreName($package->getUniqueName());
 
                     if (false === $sha256 = hash_file('sha256', $this->cacheDir . $cacheFile)) {
                         $sha256 = $this->fetch($package, $name, $cacheFile);
                     }
 
-                    yield compact('package', 'type', 'name', 'urls', 'cacheFile', 'sha256');
+                    yield [
+                        'package' => $package,
+                        'type' => 'cache',
+                        'name' => $name,
+                        'urls' => $urls,
+                        'cacheFile' => $cacheFile,
+                        'sha256' => $sha256,
+                    ];
 
                     break;
 
                 case 'path':
-                    $type = 'local';
-                    $name = self::safeNixStoreName($package->getName());
-                    $path = $package->getDistUrl();
-
-                    yield compact('package', 'type', 'name', 'path');
+                    yield [
+                        'package' => $package,
+                        'type' => 'local',
+                        'name' => $this->safeNixStoreName($package->getName()),
+                        'path' => $package->getDistUrl(),
+                    ];
 
                     break;
 
                 default:
-                    $this->io->warning(sprintf(
-                        "Package '%s' has dist-type '%s' which is not supported by the Nixify plugin",
-                        $package->getPrettyName(),
-                        $package->getDistType()
-                    ));
+                    $this
+                        ->io
+                        ->warning(
+                            sprintf(
+                                "Package '%s' has dist-type '%s' which is not" .
+                                ' supported by the Nixify plugin',
+                                $package->getPrettyName(),
+                                $package->getDistType()
+                            )
+                        );
 
                     break;
             }
@@ -203,11 +218,13 @@ final class NixGenerator
         $toPreload = array_filter(
             array_map(
                 function (array $info) use ($tempDir): ?string {
-                    $storePath = NixUtils::computeFixedOutputStorePath(
-                        $info['name'],
-                        'sha256',
-                        $info['sha256']
-                    );
+                    $storePath = $this
+                        ->nixUtils
+                        ->computeFixedOutputStorePath(
+                            $info['name'],
+                            'sha256',
+                            $info['sha256']
+                        );
 
                     if (file_exists($storePath)) {
                         return null;
@@ -368,7 +385,7 @@ final class NixGenerator
     /**
      * Sanitizes a string so it's safe to use as a Nix store name.
      */
-    private static function safeNixStoreName(string $value): string
+    private function safeNixStoreName(string $value): string
     {
         return preg_replace('/[^a-z0-9._-]/i', '_', $value);
     }
