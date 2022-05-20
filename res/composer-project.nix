@@ -67,7 +67,7 @@ in stdenv.mkDerivation {
     export NIX_COMPOSER_PATH="$(readlink -f ${escapeShellArg composerPath})"
 
     # Run normal Composer install to complete dependency installation.
-    composer install -n -o --no-suggest --no-dev
+    composer install -n -o
 
     runHook postConfigure
   '';
@@ -90,7 +90,7 @@ in stdenv.mkDerivation {
     export NIX_COMPOSER_PATH="$(readlink -f ${escapeShellArg composerPath})"
 
     # Invoke a plugin internal command to setup binaries.
-    composer nixify-install-bin "$out/bin"
+    # composer nixify-install-bin "$out/bin"
 
     runHook postInstall
   '';

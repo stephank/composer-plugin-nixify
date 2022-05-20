@@ -150,13 +150,13 @@ final class NixGenerator
     {
         $package = $this->composer->getPackage();
 
-        // Build Nix code for cache entries.
+        // Build cached entries.
         $cacheEntries = array_filter(
             $collected,
             static fn (array $info): bool => 'cache' === $info['type']
         );
 
-        // Build Nix code for local entries.
+        // Build local entries.
         $localEntries = array_filter(
             $collected,
             static fn (array $info): bool => 'local' === $info['type']
@@ -174,7 +174,7 @@ final class NixGenerator
             'cacheEntries' => $cacheEntries,
             'composerPath' => $composerPath,
             'localEntries' => $localEntries,
-            'projectName' => $package->getExtra()['nix-expr-path'] ?? 'composer-project.nix',
+            'projectName' => self::safeNixStoreName($package->getName())
         ];
 
         $searchNreplace = [
@@ -189,7 +189,7 @@ final class NixGenerator
             str_replace(
                 array_keys($searchNreplace),
                 array_values($searchNreplace),
-                file_get_contents(__DIR__ . '/../res/composer-project.nix')
+                file_get_contents(__DIR__ . '/../../res/composer-project.nix')
             )
         );
 
@@ -214,6 +214,7 @@ final class NixGenerator
             $this->cacheDir,
             substr(md5(uniqid('', true)), 0, 8)
         );
+        $this->fs->ensureDirectoryExists($tempDir);
 
         $toPreload = array_filter(
             array_map(
@@ -230,8 +231,9 @@ final class NixGenerator
                         return null;
                     }
 
-                    // The nix-store command requires a correct filename on disk, so we
-                    // prepare a temporary directory containing all the files to preload.
+                    // The nix-store command requires a correct filename on
+                    // disk, so we prepare a temporary directory containing all
+                    // the files to preload.
                     $dst = sprintf('%s/%s', $tempDir, $info['name']);
                     $copy = $this
                         ->fs
@@ -318,7 +320,7 @@ final class NixGenerator
         string $cacheFile
     ): string {
         // If some packages were previously installed but since removed from
-        // cache, `sha256` will be false for those packages in `collected`.
+        // cache, `sha256` will be false for those packages.
         // Here, we amend cache by refetching, so we can then determine the
         // file hash again.
         $downloader = $this->composer->getDownloadManager()->getDownloader('file');
