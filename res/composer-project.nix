@@ -11,10 +11,9 @@
 with lib;
 
 let
-  json = ''
+  data = builtins.fromJSON ''
     {{json}}
   '';
-  data = builtins.fromJSON (json);
   composerPath = data.composerPath or phpPackages.composer.src;
   cacheEntries = data.cacheEntries or [];
   localEntries = data.localEntries or [];
