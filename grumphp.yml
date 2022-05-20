@@ -3,5 +3,5 @@ imports:
 
 parameters:
     # GrumPHP License
-    tasks.license.holder: Stéphan Kochen
+    tasks.license.holder: Stéphan Kochen and contributors
     tasks.license.date_from: 2020
