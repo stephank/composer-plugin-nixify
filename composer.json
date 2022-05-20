@@ -1,18 +1,35 @@
 {
-  "name": "stephank/composer-plugin-nixify",
-  "type": "composer-plugin",
-  "description": "Composer plugin to help with Nix packaging",
-  "homepage": "https://github.com/stephank/composer-plugin-nixify",
-  "license": "BSD-2-Clause",
-  "autoload": {
-    "psr-4": {
-      "Nixify\\": "./src/"
+    "name": "stephank/composer-plugin-nixify",
+    "description": "Composer plugin to help with Nix packaging",
+    "license": "MIT",
+    "type": "composer-plugin",
+    "homepage": "https://github.com/stephank/composer-plugin-nixify",
+    "require": {
+        "composer-plugin-api": "^2"
+    },
+    "require-dev": {
+        "composer/composer": "^2",
+        "drupol/php-conventions": "^5.0",
+        "phpunit/phpunit": "^9.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Nixify\\": "./src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\Nixify\\": "./tests/"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "phpstan/extension-installer": true,
+            "phpro/grumphp": true,
+            "ergebnis/composer-normalize": true
+        }
+    },
+    "extra": {
+        "class": "Nixify\\Plugin"
     }
-  },
-  "require": {
-    "composer-plugin-api": "^1.1 || ^2.0"
-  },
-  "extra": {
-    "class": "Nixify\\Plugin"
-  }
 }

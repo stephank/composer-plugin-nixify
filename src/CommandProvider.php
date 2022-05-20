@@ -1,14 +1,25 @@
 <?php
 
+/**
+ * For the full copyright and license information, please view
+ * the LICENSE file that was distributed with this source code.
+ */
+
+declare(strict_types=1);
+
 namespace Nixify;
 
-class CommandProvider implements \Composer\Plugin\Capability\CommandProvider
+use Composer\Plugin\Capability\CommandProvider as CapabilityCommandProvider;
+use Nixify\Command\InstallBinCommand;
+use Nixify\Command\NixifyCommand;
+
+final class CommandProvider implements CapabilityCommandProvider
 {
-    public function getCommands()
+    public function getCommands(): array
     {
         return [
-            new InstallBinCommand,
-            new NixifyCommand,
+            new InstallBinCommand(),
+            new NixifyCommand(),
         ];
     }
 }

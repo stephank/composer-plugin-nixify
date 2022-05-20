@@ -11,16 +11,18 @@
 with lib;
 
 let
-
-  composerPath = <?php echo $composerPath; ?>;
-  cacheEntries = <?php echo $cacheEntries; ?>;
-  localPackages = <?php echo $localPackages; ?>;
+  data = builtins.fromJSON ''
+    {{json}}
+  '';
+  composerPath = data.composerPath or phpPackages.composer.src;
+  cacheEntries = data.cacheEntries or [];
+  localEntries = data.localEntries or [];
 
   # Shell snippet to collect all project dependencies.
   collectCacheScript = writeText "collect-cache.sh" (
     concatMapStrings (args: ''
       (
-        cacheFile=${escapeShellArg args.filename}
+        cacheFile=${escapeShellArg args.cacheFile}
         cacheFilePath="$COMPOSER_CACHE_DIR/files/$cacheFile"
         mkdir -p "$(dirname "$cacheFilePath")"
         cp ${escapeShellArg (fetcher args)} "$cacheFilePath"
@@ -31,11 +33,11 @@ let
   replaceLocalPaths = writeText "replace-local-paths.sh" (
     concatMapStrings (args: ''
       sed -i -e "s|\"${args.string}\"|\"${args.path}\"|" composer.lock
-    '') localPackages
+    '') localEntries
   );
 
 in stdenv.mkDerivation {
-  name = <?php echo $projectName; ?>;
+  name = data.projectName;
   inherit src;
 
   # Make sure the build uses the right PHP version everywhere.
@@ -65,7 +67,7 @@ in stdenv.mkDerivation {
     export NIX_COMPOSER_PATH="$(readlink -f ${escapeShellArg composerPath})"
 
     # Run normal Composer install to complete dependency installation.
-    composer install
+    composer install -n -o
 
     runHook postConfigure
   '';
@@ -88,7 +90,7 @@ in stdenv.mkDerivation {
     export NIX_COMPOSER_PATH="$(readlink -f ${escapeShellArg composerPath})"
 
     # Invoke a plugin internal command to setup binaries.
-    composer nixify-install-bin "$out/bin"
+    # composer nixify-install-bin "$out/bin"
 
     runHook postInstall
   '';

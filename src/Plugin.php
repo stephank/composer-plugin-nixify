@@ -1,5 +1,12 @@
 <?php
 
+/**
+ * For the full copyright and license information, please view
+ * the LICENSE file that was distributed with this source code.
+ */
+
+declare(strict_types=1);
+
 namespace Nixify;
 
 use Composer\Composer;
@@ -8,63 +15,55 @@ use Composer\IO\IOInterface;
 use Composer\Plugin\Capable;
 use Composer\Plugin\PluginInterface;
 use Composer\Script\Event;
+use Nixify\Service\NixGenerator;
 
-class Plugin implements PluginInterface, Capable, EventSubscriberInterface
+final class Plugin implements PluginInterface, Capable, EventSubscriberInterface
 {
-    public function postInstall(Event $event)
-    {
-        $generator = new NixGenerator($event->getComposer(), $event->getIO());
-        if ($generator->shouldPreload) {
-            $generator->collect();
-            $generator->preload();
-        }
-    }
-
-    public function postUpdate(Event $event)
-    {
-        $generator = new NixGenerator($event->getComposer(), $event->getIO());
-        $generator->collect();
-        $generator->generate();
-        if ($generator->shouldPreload) {
-            $generator->preload();
-        }
-    }
-
-    // PluginInterface
-
-    public function activate(Composer $composer, IOInterface $io)
+    public function activate(Composer $composer, IOInterface $io): void
     {
     }
 
-    public function deactivate(Composer $composer, IOInterface $io)
+    public function deactivate(Composer $composer, IOInterface $io): void
     {
     }
 
-    public function uninstall(Composer $composer, IOInterface $io)
-    {
-        if (file_exists('composer-project.nix') || file_exists('default.nix')) {
-            $io->writeError(
-                '<info>You may also want to delete the generated "*.nix" files.</info>'
-            );
-        }
-    }
-
-    // Capable
-
-    public function getCapabilities()
+    public function getCapabilities(): array
     {
         return [
             'Composer\Plugin\Capability\CommandProvider' => 'Nixify\CommandProvider',
         ];
     }
 
-    // EventSubscriberInterface
-
-    public static function getSubscribedEvents()
+    public static function getSubscribedEvents(): array
     {
         return [
             'post-install-cmd' => 'postInstall',
             'post-update-cmd' => 'postUpdate',
         ];
+    }
+
+    public function postInstall(Event $event): void
+    {
+        $generator = new NixGenerator($event->getComposer(), $event->getIO());
+
+        if ($generator->shouldPreload()) {
+            $generator->preload(iterator_to_array($generator->collect()));
+        }
+    }
+
+    public function postUpdate(Event $event): void
+    {
+        $generator = new NixGenerator($event->getComposer(), $event->getIO());
+        $collected = iterator_to_array($generator->collect());
+
+        $generator->generate($collected);
+
+        if ($generator->shouldPreload()) {
+            $generator->preload($collected);
+        }
+    }
+
+    public function uninstall(Composer $composer, IOInterface $io)
+    {
     }
 }
