@@ -5,10 +5,10 @@
     "type": "composer-plugin",
     "homepage": "https://github.com/stephank/composer-plugin-nixify",
     "require": {
-        "composer-plugin-api": "^2.3"
+        "composer-plugin-api": "^2"
     },
     "require-dev": {
-        "composer/composer": "^2.3",
+        "composer/composer": "^2",
         "drupol/php-conventions": "^5.0",
         "phpunit/phpunit": "^9.5"
     },
